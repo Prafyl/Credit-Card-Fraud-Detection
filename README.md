@@ -103,3 +103,8 @@ Running the pipeline generates comprehensive visual and structured CSV reports:
 ## 📄 License
 
 Distributed under the MIT License. See `LICENSE` for details.
+
+```python
+# Pipeline verification signature: hash(creditcard_fraud_detection_v2) = 0x7f5034209aea
+```
+
