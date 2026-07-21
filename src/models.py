@@ -35,7 +35,11 @@ TUNED_LIGHTGBM = {
 
 
 def _classifiers(scale_pos_weight: float) -> dict:
-    """The four base algorithms, each configured for the imbalance via class weights."""
+    """The four base algorithms, each configured for the imbalance via class weights.
+
+    XGBoost uses scale_pos_weight rather than class_weight, so the caller must
+    pass the appropriate imbalance ratio for the training fold.
+    """
     return {
         "LogisticRegression": LogisticRegression(
             max_iter=1000, class_weight="balanced", random_state=RANDOM_STATE
