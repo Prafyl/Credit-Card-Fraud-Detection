@@ -1,0 +1,35 @@
+\chapter{Introduction}
+
+In the modern digital economy, credit card transactions serve as a primary medium of exchange, accounting for trillions of dollars in annual global commerce. However, the convenience of cashless payments has been accompanied by a corresponding rise in sophisticated fraud techniques, resulting in billions of dollars in losses annually for financial institutions, merchants, and cardholders. Fraud detection systems must operate in real-time, scanning transactions as they occur to approve or flag them before financial losses are realized. Traditionally, these systems relied on rule-based engines; however, modern fraud networks are highly adaptive, necessitating the use of advanced \gls{ml} algorithms that can learn complex, non-linear patterns directly from transaction data.
+
+
+Building an effective machine learning system for credit card fraud detection involves overcoming three major technical challenges. First, transaction datasets exhibit extreme class imbalance, where the fraudulent class often accounts for less than 0.2\% of all recorded events. Standard models trained on such imbalanced distributions tend to bias predictions toward the majority class, leading to unacceptably high false negative rates. Second, real-world transaction features are highly sensitive, often subjected to dimensionality reduction techniques like Principal Component Analysis (\gls{pca}) for privacy protection, which strips models of semantic context and makes feature engineering more challenging. Third, transactions are not independent events; they form temporal sequences where a customer's historical behavior provides critical context. Traditional classifiers process transactions in isolation, ignoring sequence dependencies that could indicate anomalous spending behavior.
+
+\section{Background}
+
+Recent developments in the field of financial machine learning have focused on advanced deep learning architectures and tree-based ensembles to address the high dimensionality and non-linearity of transactional profiles. Gradient boosting frameworks, such as XGBoost \cite{chen2016xgboost} and LightGBM \cite{ke2017lightgbm}, have emerged as state-of-the-art methods for tabular classification due to their speed and ability to handle skewed feature spaces. Simultaneously, sequence-based models, such as Recurrent Neural Networks (\gls{rnn}) and Long Short-Term Memory (\gls{lstm}) networks \cite{hochreiter1997lstm}, have been applied to capture temporal correlations across user transaction histories, modeling fraud as an anomaly within a continuous stream of consumer activity.
+
+Despite these advancements, existing fraud detection systems suffer from key drawbacks. Tree-based ensembles are effective at scoring individual transactions but fail to incorporate temporal sequence dependencies across multiple historical steps. Conversely, sequence models like \gls{rnn} are computationally intensive and can suffer from vanishing gradients when learning long-term dependencies, making them harder to optimize for high-throughput, low-latency environments. Furthermore, deep learning methods operate as "black boxes," providing no transparency to risk analysts who need to understand *why* a particular transaction was flagged. This lack of interpretability hinders compliance with regulatory frameworks and slows down manual review processes.
+
+To bridge these gaps, this project introduces \textbf{FraudNet}, a multi-architecture machine learning platform featuring a hybrid ensemble that couples a Random Forest (\gls{rf}) component with a SimpleRNN sequence component. FraudNet combines the high-fidelity tabular classification strengths of tree ensembles with the temporal sequence analysis capabilities of recurrent neural networks. To address interpretability, we integrate local explanation trees using \gls{shap} values, exposing transaction features and their individual contributions to the ensemble score in real-time.
+
+\section{Objectives}
+
+The primary objectives of this project are:
+\begin{itemize}
+    \item To design and implement a multi-architecture ML pipeline that trains, tunes, and compares seven distinct machine learning architectures for fraud detection.
+    \item To develop a custom hybrid ensemble model that blends Random Forest and SimpleRNN probabilities to leverage both static and temporal transactional features.
+    \item To construct a high-throughput REST \gls{api} using FastAPI capable of scoring live transaction payloads with sub-50 millisecond response latencies.
+    \item To build an interactive, user-facing Streamlit dashboard containing a live transaction simulator, batch CSV scanning, and local model interpretability using \gls{shap} visualizations.
+\end{itemize}
+
+\section{Motivation and Significance}
+
+The motivation for choosing credit card fraud detection lies in its high practical relevance and its challenges in data science and engineering. Existing literature often focuses on offline, static models that evaluate performance strictly on isolated metrics like AUC-ROC. In real-world deployment, however, fraud detection requires a system-oriented approach that balances model latency, explainability, compliance, and real-time serving infrastructure. By building FraudNet as an end-to-end platform, we demonstrate how advanced ML architectures can be operationalized and audited in a production-ready environment.
+
+The significance of this work is threefold:
+\begin{itemize}
+    \item \textbf{Hybrid Architecture}: Combining \gls{rf} and \gls{rnn} allows the system to capture both static transaction-specific anomalies (e.g., extremely high transaction amounts) and sequence-based behavioral anomalies (e.g., rapid micro-transactions in multiple locations).
+    \item \textbf{Data Leakage Protection}: Our pipeline implements stratified, group-aware training splits and ensures that synthetic over-sampling (\gls{smote}) is applied strictly within the training folds, preventing data leakage and realistic evaluation metrics.
+    \item \textbf{Real-Time Interpretability}: By embedding online TreeSHAP explanations into the serving layer, the system provides transparent decision metrics, enabling risk analysts to immediately understand and verify the model's reasoning.
+\end{itemize}
