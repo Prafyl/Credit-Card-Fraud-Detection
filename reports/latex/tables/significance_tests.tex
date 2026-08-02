@@ -1,0 +1,16 @@
+\begin{tabular}{l l r r r}
+\hline
+\textbf{Model A} & \textbf{Model B} & \textbf{Discordant} & \textbf{$p$} & \textbf{$p_{\mathrm{Holm}}$} \\
+\hline
+XGBoost + weighted & LogReg + SMOTE & 13 & 0.0034 & 0.096 \\
+LogReg + weighted & XGBoost + weighted & 12 & 0.0063 & 0.171 \\
+LightGBM + weighted & LogReg + SMOTE & 14 & 0.0129 & 0.336 \\
+LogReg + weighted & LightGBM + weighted & 13 & 0.0225 & 0.562 \\
+XGBoost + weighted & Forest + SMOTE & 17 & 0.0490 & 1.000 \\
+XGBoost + weighted & LightGBM + SMOTE & 13 & 0.0923 & 1.000 \\
+LogReg + SMOTE & XGBoost + SMOTE & 18 & 0.0963 & 1.000 \\
+LightGBM + weighted & Forest + SMOTE & 18 & 0.0963 & 1.000 \\
+Forest + weighted & XGBoost + weighted & 7 & 0.1250 & 1.000 \\
+LogReg + weighted & XGBoost + SMOTE & 17 & 0.1435 & 1.000 \\
+\hline
+\end{tabular}

@@ -1,0 +1,15 @@
+\begin{tabular}{l r r r r r r r r}
+\hline
+\textbf{Model} & \textbf{PR-AUC} & \textbf{ROC-AUC} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} & \textbf{TP} & \textbf{FP} & \textbf{FN} \\
+\hline
+\textbf{LightGBM + weighted} & \textbf{0.828} & \textbf{0.967} & \textbf{0.972} & \textbf{0.737} & \textbf{0.838} & \textbf{70} & \textbf{2} & \textbf{25} \\
+XGBoost + weighted & 0.816 & 0.967 & 0.973 & 0.747 & 0.845 & 71 & 2 & 24 \\
+Forest + weighted & 0.813 & 0.940 & 0.957 & 0.705 & 0.812 & 67 & 3 & 28 \\
+Forest + SMOTE & 0.809 & 0.960 & 0.857 & 0.758 & 0.804 & 72 & 12 & 23 \\
+XGBoost + SMOTE & 0.807 & 0.971 & 0.985 & 0.705 & 0.822 & 67 & 1 & 28 \\
+LightGBM + SMOTE & 0.774 & 0.968 & 0.931 & 0.705 & 0.802 & 67 & 5 & 28 \\
+LogReg + SMOTE & 0.689 & 0.957 & 0.837 & 0.758 & 0.796 & 72 & 14 & 23 \\
+LogReg + weighted & 0.688 & 0.964 & 0.847 & 0.758 & 0.800 & 72 & 13 & 23 \\
+Baseline (always legit) & 0.002 & 0.500 & 0.000 & 0.000 & 0.000 & 0 & 0 & 95 \\
+\hline
+\end{tabular}
