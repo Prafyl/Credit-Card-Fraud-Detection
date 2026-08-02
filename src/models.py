@@ -66,8 +66,7 @@ def _plain_classifiers() -> dict:
             n_estimators=200, n_jobs=-1, random_state=RANDOM_STATE
         ),
         "XGBoost": XGBClassifier(
-            n_estimators=300, max_depth=5, learning_rate=0.1, n_jobs=-1,
-            eval_metric="aucpr", random_state=RANDOM_STATE
+            n_estimators=300, max_depth=5, learning_rate=0.1, random_state=RANDOM_STATE
         ),
         "LightGBM": LGBMClassifier(
             **TUNED_LIGHTGBM, n_jobs=-1, verbose=-1, random_state=RANDOM_STATE
