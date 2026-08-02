@@ -1,0 +1,14 @@
+\begin{tabular}{l r r}
+\hline
+\textbf{Model} & \textbf{ECE} & \textbf{Brier score} \\
+\hline
+\textbf{Forest + weighted} & \textbf{0.00034} & \textbf{0.00050} \\
+XGBoost + weighted & 0.00042 & 0.00045 \\
+LightGBM + weighted & 0.00046 & 0.00046 \\
+LightGBM + SMOTE & 0.00065 & 0.00064 \\
+XGBoost + SMOTE & 0.00106 & 0.00087 \\
+Forest + SMOTE & 0.00252 & 0.00061 \\
+LogReg + weighted & 0.06910 & 0.02374 \\
+LogReg + SMOTE & 0.07102 & 0.02603 \\
+\hline
+\end{tabular}

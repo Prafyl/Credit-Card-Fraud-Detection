@@ -1,0 +1,201 @@
+\section{Project Timeline and Gantt Chart}
+
+Figure~\ref{fig:gantt} shows the schedule the project followed, from data preparation and
+exploratory analysis through model training and the statistical study to building the API
+and the web application.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{gantt.png}
+    \caption{Project Gantt chart.}
+    \label{fig:gantt}
+\end{figure}
+
+From the figure above we can see how the phases overlap: modelling work continues while the
+API and web application are built, and the statistical study runs after training is
+complete.
+
+\section{Supplementary Tables}
+\label{app:tables}
+
+\subsection{Full Significance Test Results}
+
+Table~\ref{tab:sig} lists the ten smallest $p$-values. The complete set of 28 pairwise
+McNemar comparisons is available in \texttt{reports/\allowbreak significance\_\allowbreak tests.csv}. No comparison
+reaches significance at $\alpha = 0.05$ after Holm correction, and the smallest adjusted
+value is 0.096.
+
+\subsection{Cost at Every Threshold}
+
+Table~\ref{tab:cost} shows representative operating points. The full 201-row sweep, at
+threshold increments of 0.005, is in \texttt{reports/\allowbreak cost\_\allowbreak analysis.csv}.
+
+\subsection{Calibration Bins}
+
+Table~\ref{tab:calibration} reports each model's summary ECE and Brier score. The per-bin
+detail (bin boundaries, counts, mean predicted probability, and observed fraud rate) is in
+\texttt{reports/\allowbreak calibration.csv}.
+
+\section{Reproducibility}
+\label{app:repro}
+
+\subsection{Environment}
+
+All results were produced with Python 3.13 and the following pinned packages:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\hline
+\textbf{Package} & \textbf{Version} \\
+\hline
+pandas             & 2.3.3 \\
+numpy              & 2.3.5 \\
+scikit-learn       & 1.8.0 \\
+xgboost            & 3.3.0 \\
+lightgbm           & 4.6.0 \\
+imbalanced-learn   & 0.14.2 \\
+scipy              & 1.17.0 \\
+matplotlib         & 3.10.8 \\
+joblib             & 1.5.3 \\
+fastapi            & 0.128.0 \\
+uvicorn            & 0.40.0 \\
+\hline
+\end{tabular}
+\end{center}
+
+Every random component uses \texttt{random\_\allowbreak state = 42}: the train/validation/test splitter,
+all resamplers, all classifiers, the bootstrap resampler, the cross-validation fold
+assignment, and the permutation-importance shuffles.
+
+\subsection{Reproducing the Results}
+
+% Verbatim never wraps, so every line here is kept under 52 characters and the block is
+% set one size down to stay inside the text width.
+{\footnotesize
+\begin{verbatim}
+pip install -r requirements.txt
+
+python src/eda.py            # figures 01-07
+python src/train.py          # 8 pipelines, registry,
+                             #   figure 08, comparison
+python src/resampling_experiment.py
+                             # figures 09-10
+python src/deep_analysis.py  # figures 11-19, 10 CSVs
+python src/make_tables.py    # regenerate all tables
+
+python -m uvicorn api.main:app --port 8000
+cd web && npm install && npm run dev
+\end{verbatim}
+}
+
+\texttt{deep\_\allowbreak analysis.py} accepts \texttt{-{}-fast} to skip cross-validation and the
+learning curve, which account for most of its runtime (roughly 7 minutes of the 8-minute
+total on the development machine).
+
+\subsection{Verification Built into the Pipeline}
+
+Two automatic checks guard against the errors that would most easily invalidate these
+results.
+
+\texttt{train.py} reloads the saved champion from disk, re-scores the test set, and asserts
+that the PR-AUC matches the in-memory value to within $10^{-9}$. It also warns if the
+PR-AUC exceeds 0.99, which on this dataset would indicate leakage rather than success.
+
+\texttt{deep\_\allowbreak analysis.py} independently reloads all eight pipelines and asserts that the
+champion reproduces a PR-AUC of $0.8277$ and confusion counts of $70/2/25/56{,}649$ exactly
+before performing any analysis. Every number in Chapter~\ref{ch:results} is therefore
+computed from models verified to be identical to those reported in
+Section~\ref{sec:comparison}.
+
+\section{API Reference}
+\label{app:api}
+
+\subsection{Scoring a Transaction}
+
+{\footnotesize
+\begin{verbatim}
+POST /predict?model=LightGBM + weighted
+             &threshold=0.636
+{
+  "features": {
+    "V1": -1.36, "V2": -0.07, ...,
+    "Amount": 149.62
+  }
+}
+
+# Response
+{
+  "fraud_probability": 0.0121,
+  "is_fraud": false,
+  "threshold": 0.636,
+  "model": "LightGBM + weighted"
+}
+\end{verbatim}
+}
+
+\subsection{Pipeline Construction}
+
+Each model is one pipeline of scaling, optional resampling, and a classifier. The resampler
+is a pipeline step, so it runs only on the training fold during \texttt{fit}. This is the
+leakage control described in Section~\ref{sec:leakage}.
+
+{\footnotesize
+\begin{verbatim}
+for name, clf in classifiers.items():
+    models[f"{name} + weighted"] = Pipeline([
+        ("scale", StandardScaler()),
+        ("clf", clf),
+    ])
+
+for name, clf in plain_classifiers.items():
+    models[f"{name} + SMOTE"] = Pipeline([
+        ("scale", StandardScaler()),
+        ("smote", SMOTE(random_state=SEED)),
+        ("clf", clf),
+    ])
+\end{verbatim}
+}
+
+\subsection{Threshold Selection}
+
+This is the implementation of Equation~\ref{eq:threshold}, computed in $O(n \log n)$ by
+sorting the validation probabilities once and sweeping both error counts with cumulative
+sums.
+
+{\footnotesize
+\begin{verbatim}
+def best_threshold(y_val, val_proba) -> float:
+    """Cut-off minimising FN + FP, in O(n log n)."""
+    order = np.argsort(val_proba)
+    y_sorted = np.asarray(y_val)[order]
+    n_pos = int(y_sorted.sum())
+    n = len(y_val)
+
+    missed = np.cumsum(y_sorted)
+    seen = np.arange(1, n + 1)
+    false_alarms = (n - seen) - (n_pos - missed)
+    best = int(np.argmin(missed + false_alarms))
+    return float(np.nextafter(
+        val_proba[order][best], np.inf))
+\end{verbatim}
+}
+
+\subsection{McNemar's Exact Test}
+
+The code below implements the test of \citet{mcnemar1947note}, in the paired-classifier
+form recommended by \citet{dietterich1998approximate}. Only the two discordant counts enter
+the test: $b$, the cases model A gets right and model B gets wrong, and $c$, the reverse.
+Under the null hypothesis that the two models are equally accurate, $b$ follows a binomial
+distribution with $n = b + c$ and $p = 0.5$.
+
+{\footnotesize
+\begin{verbatim}
+b = int((correct_a & ~correct_b).sum())  # A right
+c = int((~correct_a & correct_b).sum())  # B right
+p = binomtest(b, b + c, 0.5).pvalue      # exact test
+\end{verbatim}
+}
+
+The exact binomial form is used rather than the $\chi^2$ approximation because the number of
+discordant pairs is between 12 and 17 for the comparisons of interest. That is well below
+the count of roughly 25 at which the approximation becomes reliable.

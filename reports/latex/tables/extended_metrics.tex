@@ -1,0 +1,14 @@
+\begin{tabular}{l r r r r r r}
+\hline
+\textbf{Model} & \textbf{MCC} & \textbf{Spec.} & \textbf{NPV} & \textbf{Bal. acc.} & \textbf{Youden $J$} & \textbf{Alerts/1k} \\
+\hline
+\textbf{LightGBM + weighted} & \textbf{0.846} & \textbf{0.99996} & \textbf{0.99956} & \textbf{0.868} & \textbf{0.737} & \textbf{1.269} \\
+XGBoost + weighted & 0.852 & 0.99996 & 0.99958 & 0.874 & 0.747 & 1.286 \\
+Forest + weighted & 0.821 & 0.99995 & 0.99951 & 0.853 & 0.705 & 1.234 \\
+Forest + SMOTE & 0.806 & 0.99979 & 0.99959 & 0.879 & 0.758 & 1.480 \\
+XGBoost + SMOTE & 0.833 & 0.99998 & 0.99951 & 0.853 & 0.705 & 1.198 \\
+LightGBM + SMOTE & 0.810 & 0.99991 & 0.99951 & 0.853 & 0.705 & 1.269 \\
+LogReg + SMOTE & 0.796 & 0.99975 & 0.99959 & 0.879 & 0.758 & 1.516 \\
+LogReg + weighted & 0.801 & 0.99977 & 0.99959 & 0.879 & 0.758 & 1.498 \\
+\hline
+\end{tabular}

@@ -1,0 +1,87 @@
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\section{Conclusion}
+
+This project set out to build a complete and honest fraud detection system on a severely
+imbalanced dataset, and to work out how much confidence its results actually deserve.
+
+On the engineering objectives it succeeded. The pipeline de-duplicates before splitting and
+keeps all resampling inside the training fold. Eight model pipelines are trained and
+compared under a protocol in which the test set influences nothing but the final report. The
+best model reaches a PR-AUC of 0.828, catching 70 of 95 frauds at two false alarms. The
+whole system is served through an API and an interactive web application in which the
+decision threshold is a live control rather than a hidden constant.
+
+On the statistical objectives it produced a more interesting result than we expected. Once
+we applied confidence intervals, paired significance tests, and cross-validation, the
+apparent ordering of the leading models did not hold up. The champion's bootstrap interval
+spans $[0.751, 0.899]$. None of the 28 pairwise McNemar tests is significant after Holm
+correction. Cross-validation shows fold-to-fold variation several times larger than the
+differences between models, and it reverses the ranking. The top four models cannot be told
+apart on this dataset.
+
+The differences that are real lie elsewhere. Resampling strategy produces a spread thirteen
+times wider than algorithm choice, with random undersampling collapsing to 0.548 because
+balancing the classes destroys 99.7 percent of the training data. Calibration separates the
+model families by two orders of magnitude. And the learning curve, still rising at the full
+training set, points to the real bottleneck, which is not the algorithm but the number of
+fraud examples available to learn from.
+
+The main lesson of the project is therefore about method. On a dataset with 473 positive
+cases, a single train/test split cannot support the model-ranking claims that are routinely
+made from it, and the extra work needed to discover that, being intervals, paired tests and
+resampled folds, is small compared to the false confidence it prevents.
+
+\section{Summary of Contributions}
+
+\begin{itemize}
+  \item A reproducible, leakage-controlled pipeline with de-duplication before splitting and
+        resampling confined to the training fold.
+  \item A comparison of eight pipelines in which every headline figure carries a confidence
+        interval and every pairwise difference is tested for significance, with the
+        conclusion drawn being the one the evidence supports rather than the one the point
+        estimates suggest.
+  \item A controlled resampling study that separates the sampling step from the algorithm,
+        with a concrete explanation for why undersampling fails.
+  \item A calibration, cost, lift, feature-importance, and learning-curve analysis of the
+        deployed model, including the finding that the simple error-count threshold is
+        within 0.3 percent of cost-optimal under an amount-weighted cost model.
+  \item A served system with a model registry, exposing model choice and decision threshold
+        as live controls, together with a three-dimensional rendering of the full decision
+        surface.
+  \item A reporting chain in which every table is generated from the analysis outputs, so
+        the document cannot drift away from the code.
+\end{itemize}
+
+\section{Future Work}
+
+Nested cross-validation with tuning inside the loop is the clearest methodological
+improvement available. Tuning every algorithm equally, inside each fold,
+would remove the asymmetry identified in Section~\ref{sec:notestablish} and give a fair
+estimate of what each algorithm can reach, rather than comparing one tuned model against
+three untuned ones.
+
+Collecting more labelled fraud is the next priority. The learning curve has not levelled
+off, so this is worth more than further algorithmic work.
+
+Local explanations would also be valuable. \gls{shap} values \citep{lundberg2017unified}
+would show which
+features pushed an individual transaction toward its score. With anonymised components this
+cannot produce a human-readable reason, but it would support consistency auditing and help
+meet the explainability requirements that apply to automated decisions in financial
+services.
+
+Sequence models are a natural extension. Given per-card histories with genuine timestamps, recurrent
+architectures such as \gls{lstm} \citep{hochreiter1997long} could capture patterns that a
+single-transaction classifier cannot see. A burst of small test purchases is the standard
+example, and the small median fraud amount in this dataset hints at exactly that behaviour.
+
+A calibrated cost-sensitive deployment is possible too. Combining the well-calibrated
+probabilities of Section~\ref{sec:calibration} with a measured cost model would let the
+threshold be set by expected loss directly, and adjusted automatically as review capacity
+changes.
+
+Finally, a production deployment would need drift monitoring and scheduled retraining, so
+that distribution shift is detected and the model is refitted on a schedule. A two-day
+training window says nothing about stability over time.

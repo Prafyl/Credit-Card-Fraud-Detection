@@ -1,0 +1,659 @@
+\chapter{Results and Discussion}
+\label{ch:results}
+
+All models were evaluated on the same held-out test set of 56{,}746 transactions containing
+95 frauds, which took no part in training or threshold selection. The chapter first reports
+the model comparison, then the controlled resampling study, then the statistical testing
+that forms the core of the project, and closes with what the results do and do not
+establish.
+
+\section{Model Comparison}
+\label{sec:comparison}
+
+Table~\ref{tab:comparison} ranks every pipeline by PR-AUC. The trivial baseline that always
+predicts ``legitimate'' is included to show why accuracy is not used: it would score 99.83
+percent accuracy while catching nothing, and its PR-AUC of 0.0017 is simply the prevalence
+of the positive class.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Model comparison.}
+    \label{tab:comparison}
+    \small
+    \input{tables/model_comparison}
+\end{table}
+
+From the table we can see that LightGBM with class weighting leads at PR-AUC 0.828,
+followed by XGBoost with weighting (0.816) and Random Forest with weighting (0.813).
+Logistic Regression trails in both of its variants at roughly 0.689, which fits with the
+fact that it cannot represent interactions between the PCA components. All counts in the
+table are taken at each model's own tuned threshold, and the winning row is set in bold.
+
+Two patterns are visible. First, the gradient-boosted and forest models form a tight
+leading group spanning just 0.021 of PR-AUC. Second, class weighting slightly beat SMOTE
+for the stronger learners. LightGBM in particular drops from 0.828 to 0.774 when SMOTE
+replaces class weighting, which is the largest single effect in the table.
+Section~\ref{sec:resampling} isolates that effect properly, and
+Section~\ref{sec:significance} tests whether any of these gaps are real.
+Figure~\ref{fig:comparison} shows the same ranking graphically.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.78\textwidth]{08_model_comparison.png}
+    \caption{PR-AUC ranking.}
+    \label{fig:comparison}
+\end{figure}
+
+From the figure above we can see how tightly the leading group is clustered, with only the
+two Logistic Regression bars standing clearly apart from the rest. The baseline is so close
+to zero that it is not visible at this scale.
+
+\section{Beyond Precision and Recall}
+
+Precision, recall, and $F_1$ do not cover everything a fraud team needs to know.
+Table~\ref{tab:extended} adds six further metrics, derived from the same confusion matrices
+and taken at each model's own tuned threshold.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Extended metrics.}
+    \label{tab:extended}
+    \small
+    \input{tables/extended_metrics}
+\end{table}
+
+From the table we can see three things. Specificity and \gls{npv} tell us almost nothing
+here, because every
+model scores above 0.999 on both, and it is the true-negative count of about 56{,}650 that
+puts them there. MCC, which uses all four cells, tracks PR-AUC closely and confirms the
+same ordering. The most practical column is alerts per 1{,}000 transactions, which
+translates the models into staffing terms: the champion raises 1.27 alerts per thousand,
+while Logistic Regression with SMOTE raises 1.52. That is a 20 percent larger review queue
+for noticeably worse ranking quality.
+
+\section{Operating Point of the Selected Model}
+
+The selected LightGBM model uses a tuned threshold of 0.636. On the test set this gives the
+confusion matrix below.
+
+\begin{center}
+\begin{tabular}{lrr}
+\hline
+& \textbf{Predicted fraud} & \textbf{Predicted legitimate} \\
+\hline
+\textbf{Actual fraud}       & 70 (caught)      & 25 (missed) \\
+\textbf{Actual legitimate}  & 2 (false alarm)  & 56{,}649 (correct) \\
+\hline
+\end{tabular}
+\end{center}
+
+From the table we can see that the model catches 70 of the 95 frauds while raising only two
+false alarms, which is a precision of 0.972 and a recall of 0.737. Almost every alarm is a
+genuine fraud,
+but roughly one in four frauds still slips through. Whether that balance is acceptable
+depends on the institution's priorities, which is exactly why the threshold is exposed as a
+live control in the web application rather than fixed in code.
+
+\section{ROC and Precision-Recall Curves}
+
+Figure~\ref{fig:roccurves} makes the argument of Section~2.3 concrete by plotting the same
+eight models under both kinds of curve.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{14_roc_and_pr_curves.png}
+    \caption{ROC and PR curves.}
+    \label{fig:roccurves}
+\end{figure}
+
+From the figure above we can see that on the left every model's ROC curve hugs the top-left
+corner and all eight look excellent, with ROC-AUC values between 0.94 and 0.97, while on
+the right the same models separate clearly and the weaker ones are exposed. The dashed line
+on the right is the random-classifier baseline at the 0.167 percent prevalence. Both panels
+describe identical predictions, and only the choice of axes differs.
+
+This is the clearest justification for the metric choice made in
+Chapter~\ref{ch:methodology}, and it is why every ranking in this report uses PR-AUC rather
+than ROC-AUC.
+
+\section{Resampling Strategy Study}
+\label{sec:resampling}
+
+\subsection{Design}
+
+Table~\ref{tab:comparison} compares SMOTE against class weighting across four algorithms,
+but the algorithm changes at the same time as the strategy, so the two effects are mixed
+together. A controlled experiment is needed to isolate the resampling decision on its own.
+
+The design holds everything else fixed. The classifier is LightGBM with the tuned
+hyperparameters of Table~\ref{tab:hyper}, and the split, the seed, and the
+threshold-selection procedure are identical to Chapter~\ref{ch:methodology}. Only the
+resampling step in the pipeline varies:
+
+\begin{enumerate}
+  \item Class weighting, with no resampler at all; the loss is re-weighted instead.
+  \item Random undersampling, discarding majority rows until the classes balance.
+  \item Random oversampling, duplicating minority rows until the classes balance.
+  \item SMOTE, interpolating synthetic minority points until the classes balance.
+\end{enumerate}
+
+Every sampler sits inside the pipeline, so it touches only the training fold.
+Table~\ref{tab:resampling} reports the outcome of the four runs.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Resampling comparison.}
+    \label{tab:resampling}
+    \small
+    \input{tables/resampling_comparison}
+\end{table}
+
+From the table we can see a spread of 0.280 in PR-AUC between the best and the worst
+strategy, even though the algorithm and its hyperparameters never changed. The last column,
+``train rows'', is the size of the training set the classifier actually sees after
+resampling, and it explains most of that spread. Figures \ref{fig:respr} and \ref{fig:rescm}
+show the same four runs as curves and as confusion matrices.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.7\textwidth]{09_resampling_pr_curves.png}
+    \caption{Resampling PR curves.}
+    \label{fig:respr}
+\end{figure}
+
+From the figure above we can see that class weighting and random oversampling trace almost
+the same curve, while random undersampling deteriorates sharply once recall exceeds about
+0.4.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.82\textwidth]{10_resampling_confusion_matrices.png}
+    \caption{Resampling confusion matrices.}
+    \label{fig:rescm}
+\end{figure}
+
+From the figure above we can see the same result in counts: the three strategies that keep
+all the data catch 67 to 73 of the 95 frauds, while undersampling catches only 36 of them.
+
+\subsection{Interpretation}
+
+Class weighting wins at 0.828. This confirms that its advantage in
+Table~\ref{tab:comparison} was not caused by which algorithms happened to be paired with it.
+
+Random oversampling is a close second at 0.815, only 0.013 behind. That makes
+sense, because duplicating minority rows and re-weighting the loss are almost the same
+operation. Duplicating a row $k$ times multiplies its contribution to the total loss by $k$,
+which is exactly what a class weight of $k$ does directly, and without the memory cost of
+building a table of 339{,}902 rows. Oversampling reaches the highest recall of the four
+(0.768) at some cost in precision (0.901 against 0.972).
+
+SMOTE underperforms both at 0.774. Its synthetic points are interpolated between
+existing frauds, so they fill in regions the model already covers instead of extending what
+it knows. There is a second problem. In a 29-dimensional space where the minority class is
+sparse, interpolating between two frauds that are nearest neighbours but still far apart can
+create points in regions where no real fraud lives, which adds label noise.
+
+Random undersampling collapses to 0.548, and the reason is visible in the last
+column of Table~\ref{tab:resampling}. Balancing 284 training frauds against 169{,}951
+legitimate transactions means discarding 169{,}667 of the latter, which leaves a training
+set of just 568 rows, or 0.33 percent of the data. Recall falls to 0.379, so it
+misses 59 of 95 frauds, worse than every alternative. Its ROC-AUC nevertheless stays at
+0.966, essentially tied with the winners. That is a clear demonstration that ROC-AUC can
+hide a badly broken model on imbalanced data, exactly as Section~2.3 predicts.
+
+For a dataset this imbalanced, the cost of throwing away majority data is greater than the
+cost of the imbalance itself. The methods that keep all the data and adjust the learning
+objective, namely class weighting and its near-equivalent oversampling, beat the methods
+that change the data distribution.
+
+\section{Confidence Intervals}
+\label{sec:ci}
+
+Sections \ref{sec:comparison} and \ref{sec:resampling} reported single numbers from a single
+split. The rest of this chapter asks whether those numbers support the conclusions usually
+drawn from them. The short answer is that they support much less than they appear to.
+
+Table~\ref{tab:ci} attaches a 95 percent range to every headline figure, using a
+1{,}000-resample percentile bootstrap for PR-AUC and Wilson score intervals for precision
+and recall.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Confidence intervals.}
+    \label{tab:ci}
+    \small
+    \input{tables/confidence_intervals}
+\end{table}
+
+From the table we can see that every interval is far wider than the gaps between the models
+it is meant to separate. Figure~\ref{fig:forest} plots the PR-AUC intervals side by side.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.78\textwidth]{11_pr_auc_confidence_intervals.png}
+    \caption{PR-AUC confidence intervals.}
+    \label{fig:forest}
+\end{figure}
+
+From the figure above we can see that the 95 percent bootstrap intervals of the top five
+models overlap almost completely, so their bars give no visual evidence of a real ordering.
+
+The intervals are wide. The champion's PR-AUC of 0.828 carries an interval of
+$[0.751, 0.899]$, a span of 0.148. That is seven times the 0.021 that separates the entire
+leading group of five models. Every one of those five has an interval that contains the
+point estimates of the other four. Even Logistic Regression, which looks far behind at
+0.689, has an upper bound of 0.789 that comfortably exceeds the champion's lower bound of
+0.751.
+
+The reason is the small number of positives. With 95 frauds in the test set, a single fraud
+crossing the decision boundary changes recall by 1.05 percentage points. The recall
+intervals are correspondingly wide, and the champion's spans 17 points, from 0.640 to
+0.815.
+
+\section{Pairwise Significance Testing}
+\label{sec:significance}
+
+Overlapping confidence intervals are suggestive but not decisive, because the models are
+evaluated on the same transactions and their errors are correlated. McNemar's exact test is
+the correct paired procedure (Section~\ref{sec:statmethods}). Table~\ref{tab:sig} shows the
+ten pairs that came closest to significance out of the 28.
+
+\begin{table}[htbp]
+    \centering
+    \caption{McNemar test results.}
+    \label{tab:sig}
+    \small
+    \input{tables/significance_tests}
+\end{table}
+
+From the table we can see that even the ten closest comparisons stay above the 0.05 level
+once the $p$-values are Holm-adjusted. The full set of 28 comparisons is in
+Appendix~\ref{app:tables}, and Figure~\ref{fig:mcnemar} shows all of them at once.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{12_mcnemar_significance.png}
+    \caption{McNemar significance matrix.}
+    \label{fig:mcnemar}
+\end{figure}
+
+From the figure above we can see that no cell in the matrix falls below 0.05, so not one of
+the 28 pairs differs significantly at the 5 percent level after Holm correction. The
+smallest raw $p$-value is 0.0034, comparing XGBoost + weighted against
+Logistic Regression + SMOTE, and it rises to 0.096 after correcting for 28 comparisons. The
+comparison that actually matters, LightGBM + weighted against XGBoost + weighted, is
+nowhere near significance.
+
+The reason is visible in the discordant-pair counts: the models disagree on only 12 to 17
+transactions out of 56{,}746. On that little evidence no test could tell them apart. This is
+not a weakness of the test. It is an accurate statement about how much information 95
+positive cases can carry.
+
+\section{Cross-Validation}
+\label{sec:cv}
+
+A single split gives one sample of a quantity that varies. Five-fold stratified
+cross-validation on the combined training and validation data re-estimates each model's
+PR-AUC five times.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Cross-validation results.}
+    \label{tab:cv}
+    \small
+    \input{tables/cross_validation}
+\end{table}
+
+From the table we can see that the four mean scores sit within 0.005 of each other while
+each model's own standard deviation across folds is several times larger than that.
+Figure~\ref{fig:cv} shows the same numbers as a distribution.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.78\textwidth]{17_cross_validation.png}
+    \caption{Cross-validation spread.}
+    \label{fig:cv}
+\end{figure}
+
+From the figure above we can see that the spread within each model is wider than the
+distance between the models, so the boxes overlap heavily.
+
+Two results stand out.
+
+First, the fold-to-fold standard deviation of 0.018 to 0.032 is four to six times the 0.005
+that separates the four models' means. Any of these models can look best or worst depending
+on which fold it is evaluated on. LightGBM ranges from 0.814 to 0.896 across folds, a span
+wider than the entire distance between the best and worst model in the table.
+
+Second, the ranking changes. XGBoost + weighted achieves the highest mean (0.8494)
+against LightGBM's 0.8490, reversing the single-split result that selected LightGBM as
+champion. The difference is 0.0004, far inside the noise, so the fair statement is not that
+XGBoost is better but that the two cannot be told apart and the original choice was
+arbitrary.
+
+The cross-validated means (0.844 to 0.849) are higher than the single-split test scores
+(0.813 to 0.828). That is because each fold trains on 80 percent of a larger pool than the
+original 60 percent training split.
+
+\section{Calibration}
+\label{sec:calibration}
+
+PR-AUC measures ranking. It says nothing about whether a predicted probability of 0.8 really
+corresponds to an 80 percent chance of fraud, which matters as soon as the score feeds an
+expected-loss calculation. The \gls{ece} \citep{guo2017calibration} checks this directly: it
+groups predictions into probability bins and measures, on average, how far each bin's
+predicted confidence is from the fraction of cases in that bin that turned out to be fraud.
+A well-calibrated model has probabilities that can be trusted at face value, and a poorly
+calibrated one does not, even if it ranks transactions correctly.
+Table~\ref{tab:calibration} reports the ECE and the Brier score for all eight models,
+ranked by ECE.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Calibration metrics.}
+    \label{tab:calibration}
+    \small
+    \input{tables/calibration}
+\end{table}
+
+From the table we can see that the six tree-based models occupy the top of the ranking and
+the two Logistic Regression variants sit at the bottom, separated from them by two orders
+of magnitude. Figure~\ref{fig:calibration} shows what that difference looks like.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.72\textwidth]{13_calibration_curves.png}
+    \caption{Reliability curves.}
+    \label{fig:calibration}
+\end{figure}
+
+From the figure above we can see which models can be trusted at face value: points lying on
+the diagonal are those whose predicted probabilities match the observed fraud frequencies,
+and the curves that bend away from it are overconfident.
+
+The tree-based models are extremely well calibrated, with ECE between 0.00034 and
+0.00252 and Brier scores below 0.0009. Logistic Regression is not: its ECE of 0.069 is two
+orders of magnitude worse, and its Brier score of 0.024 is 50 times the champion's.
+
+This is a genuinely useful finding that the ranking metrics hide. Logistic Regression is
+only moderately worse than the tree models at ordering transactions (PR-AUC 0.689 against
+0.828), but it is far worse at quantifying risk. Its tuned threshold of 0.99999 in
+Table~\ref{tab:comparison} is the symptom. The model is so consistently overconfident that
+a sensible operating point exists only in the last fraction of a percent of its probability
+range.
+
+\section{Feature Importance}
+\label{sec:importance}
+
+Table~\ref{tab:importance} ranks the top twelve features by how much the model actually
+relies on them, with its own gain-based importance alongside for comparison.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Feature importance.}
+    \label{tab:importance}
+    \small
+    \input{tables/feature_importance}
+\end{table}
+
+From the table we can see that the two measures of importance broadly agree on which
+features matter, but not on how much, and that both are dominated by a small number of
+components. Figure~\ref{fig:importance} places them side by side.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{15_feature_importance.png}
+    \caption{Feature importance comparison.}
+    \label{fig:importance}
+\end{figure}
+
+From the figure above we can see the drop-off in both panels: a couple of tall bars
+followed by a long tail of features that contribute very little.
+
+Permutation importance is the drop in test PR-AUC when a column is randomly shuffled. It is
+the more trustworthy measure, because it is computed on data the model never saw. It
+identifies V14 as dominant (0.0726) followed by V4 (0.0541), with a steep
+drop to V7 (0.0140).
+
+This disagrees with the exploratory analysis of Section~\ref{sec:eda}, which ranked V17
+highest by linear correlation, with V14 second. The disagreement is informative. Univariate
+correlation measures how strongly a feature is linearly associated with the label on its
+own, while permutation importance measures what a feature adds given every other feature in
+a non-linear model. V17 and V14 are both informative, but once V14 is present the model no
+longer needs V17. Any feature-selection decision based on the correlation ranking alone
+would have been misleading.
+
+The gain column shows V14 accounting for 50.9 percent of total split gain, which confirms
+that the model concentrates heavily on a small number of components.
+
+\section{Learning Curve}
+
+Table~\ref{tab:lc} retrains the champion on increasing fractions of the training set.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Learning curve results.}
+    \label{tab:lc}
+    \small
+    \input{tables/learning_curve}
+\end{table}
+
+From the table we can see that PR-AUC keeps improving at every step, including the last one,
+so the model has not yet run out of use for additional data. Figure~\ref{fig:lc} plots the
+same values.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.72\textwidth]{18_learning_curve.png}
+    \caption{Learning curve.}
+    \label{fig:lc}
+\end{figure}
+
+From the figure above we can see that the curve is still climbing at the right-hand edge
+rather than levelling off, even on a logarithmic axis.
+
+Performance rises from 0.736 at 5 percent of the training data (15 frauds) to 0.828 at 100
+percent (284 frauds). Critically, the curve has not flattened, and the last
+increment from 75 to 100 percent still adds 0.016. The binding constraint is the absolute
+number of fraud examples, not the number of transactions. This makes collecting more
+labelled fraud the single highest-value improvement available, ahead of any further
+algorithmic tuning.
+
+\section{Lift and Operational Value}
+
+Table~\ref{tab:lift} sorts the test set by the champion model's predicted score and splits
+it into ten equal groups.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Decile lift.}
+    \label{tab:lift}
+    \small
+    \input{tables/lift}
+\end{table}
+
+From the table we can see that almost all of the fraud is concentrated in the first decile,
+and that the deciles below it contain very little. Figure~\ref{fig:lift} shows the same
+concentration two ways.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{19_lift_and_gains.png}
+    \caption{Cumulative gains and lift.}
+    \label{fig:lift}
+\end{figure}
+
+From the figure above we can see that the gains curve on the left rises almost vertically
+over the first decile and is then nearly flat, while the lift bars on the right drop away
+sharply after the first group.
+
+Framed as a review queue, the results are strong. The top decile of scored
+transactions contains 88 of the 95 frauds, which is 92.6 percent of all fraud for 10
+percent of the review effort, a lift of 9.26 over random sampling. The second decile adds
+nothing at all, and the remaining seven frauds are scattered thinly through the rest of the
+distribution.
+
+This puts the recall figure in a useful light. At its tuned threshold the model reports
+recall 0.737, but that reflects a very conservative cut-off chosen to hold false alarms near
+zero. An institution willing to review 10 percent of transactions could reach 92.6 percent
+recall with the same model and no retraining, purely by moving the threshold.
+
+\section{Cost-Sensitive Thresholding}
+\label{sec:cost}
+
+The threshold objective of Section~\ref{sec:threshold} treats one missed fraud as equal to
+one false alarm. A monetary model is more defensible: a missed fraud costs the transaction
+amount actually lost, while a false alarm costs a fixed manual review, assumed here at
+EUR 3. Let $\mathcal{M}(t)$ be the set of frauds the model misses at threshold $t$, let
+$a_i$ be the amount of transaction $i$, and let $FP(t)$ be the number of false alarms. The
+total cost is then
+\begin{equation}
+  \label{eq:cost}
+  C(t) = \sum_{i \in \mathcal{M}(t)} a_i \; + \; 3 \, FP(t).
+\end{equation}
+
+Equation~\ref{eq:cost} is this project's instance of the expected-cost formulation of
+\citet{elkan2001foundations}, with the general cost matrix given there filled in for this
+problem: the cost of a missed fraud is the transaction amount and the cost of a false alarm
+is the flat review fee. The EUR 3 figure is our own assumption rather than a published one.
+The cost is evaluated across the full range of thresholds, and Table~\ref{tab:cost} reports
+it at a set of representative ones.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Cost analysis.}
+    \label{tab:cost}
+    \small
+    \input{tables/cost_analysis}
+\end{table}
+
+From the table we can see that the cost-optimal point and the error-count threshold
+actually deployed end up within a few euros of each other, despite sitting at very
+different places on the threshold range. Figure~\ref{fig:cost} shows why.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.82\textwidth]{16_cost_analysis.png}
+    \caption{Cost against threshold.}
+    \label{fig:cost}
+\end{figure}
+
+From the figure above we can see that the total-cost curve has a very shallow minimum: it
+rises steeply only at the extreme low end, where every transaction is reviewed, and is
+close to flat across the whole usable range of thresholds.
+
+The cost-optimal threshold is 0.010, giving a total cost of EUR 3{,}807. The deployed
+error-count threshold of 0.636 costs EUR 3{,}819, a difference of EUR 12, or 0.3
+percent. The simple objective is, on this data, essentially cost-optimal.
+
+The reason is that the total-cost curve is flat across most of its range, and the reason for
+that is the finding from Section~\ref{sec:eda} that fraudulent transactions are typically
+small, with a median of EUR 9.82. Because the frauds this model misses are mostly low in
+value, the extra fraud loss from a stricter threshold is small, while review costs stay
+negligible at EUR 3 apiece. Both endpoints confirm the shape: at $t = 0$ every transaction
+is reviewed, costing EUR 169{,}953, and at $t = 1$ nothing is caught, costing EUR 14{,}766
+in fraud losses.
+
+This result depends on the assumed EUR 3 review cost. A higher figure would push the optimum
+toward stricter thresholds, and the analysis should be repeated with a real cost.
+
+\section{What the Results Establish}
+
+Three findings in this project rest on evidence strong enough to state plainly.
+
+Resampling strategy matters more than the choice of algorithm. The controlled
+study of Section~\ref{sec:resampling} produced a spread of 0.280 PR-AUC between the best and
+worst strategy with the algorithm held constant, while the entire leading group of
+algorithms spans only 0.021. The reason is easy to see: random undersampling cuts the
+training set from 170{,}235 rows to 568.
+
+Tree ensembles are much better calibrated than logistic regression. An ECE gap of
+two orders of magnitude, 0.0005 against 0.069, is not a marginal difference, and unlike the
+ranking differences it is not drowned out by sampling noise.
+
+The model is useful in practice whichever champion is chosen. Putting 92.6 percent
+of frauds into the top-scoring decile is a large practical gain, and it holds for any of the
+top models.
+
+\section{What the Results Do Not Establish}
+\label{sec:notestablish}
+
+Our results do not show that LightGBM is better than XGBoost, Random Forest, or their SMOTE
+variants.
+
+Three separate checks point the same way. None of the 28 pairwise McNemar comparisons is
+significant after Holm correction. The bootstrap intervals for the top five models overlap
+almost completely. And when we move from a single split to five-fold cross-validation,
+XGBoost comes out ahead instead.
+
+The gap we would otherwise have reported is 0.012 of PR-AUC between LightGBM and XGBoost,
+and those two models disagree on only 12 of the 56{,}746 test transactions. That is not
+enough evidence to call a winner.
+
+We think this is a useful result rather than a disappointing one. It tells us what 473 fraud
+cases can and cannot support, and it is the kind of thing a single train/test split would
+never have shown us.
+
+\section{Threats to Validity}
+
+\subsection{Internal Validity}
+
+The hyperparameter tuning is uneven. Only LightGBM received a search of 40
+candidates, while the other three algorithms use fixed defaults. The comparison is therefore
+biased in LightGBM's favour, which makes its failure to separate from the others an even
+weaker basis for choosing it.
+
+The threshold is tuned on a small validation set, which contains only 94 frauds.
+A threshold chosen to minimise total errors on 94 positives carries a lot of variance, and
+its apparent optimality will not transfer exactly.
+
+The test set is also reused. It was used once for the main comparison,
+but the analyses from Section~\ref{sec:ci} onward reuse it for bootstrap intervals,
+permutation importance, calibration, and cost analysis. These are descriptive analyses of a
+fixed model rather than selection decisions, so they do not bias which model we chose. The
+confidence intervals are nevertheless conditional on this particular test set, and are not
+independent of one another.
+
+\subsection{External Validity}
+
+The data covers a single two-day window. All of it comes from September 2013 and from
+one European card issuer. Fraud patterns drift, so nothing here can say anything about
+performance a year later, in another market, or under a different fraud regime.
+
+The features are anonymised. The PCA components cannot be interpreted, so the model's
+reliance on V14 and V4 cannot be sanity-checked against domain knowledge. If those
+components encode something specific to this collection window, the model would not
+transfer, and there is no way to detect that from the data available.
+
+There is no per-card context. Each transaction is scored on its own. Real fraud detection
+uses sequence and account history, such as a burst of small test purchases or a sudden
+change in geography, and none of that is available here.
+
+\subsection{Construct Validity}
+
+The cost model is assumed, not measured. The EUR 3 review cost in
+Section~\ref{sec:cost} is a placeholder. The conclusion that the deployed threshold is
+within 0.3 percent of cost-optimal depends on it, and would change with a realistic figure.
+
+Amount is also an imperfect proxy for fraud loss. Charging a missed fraud its full
+transaction amount ignores recovery, chargeback mechanics, and reputational cost.
+
+\section{Practical Recommendations}
+
+\begin{enumerate}
+  \item Prefer class weighting over any resampling method on data this imbalanced.
+        It matched or beat every alternative, adds no hyperparameters, and introduces no
+        synthetic data.
+  \item Choose the deployed model on engineering criteria, since the statistical
+        criteria do not separate them. Inference speed, calibration quality, memory
+        footprint, and model size are all reasonable tie-breakers, and by those measures
+        LightGBM remains a good choice.
+  \item Collect more fraud labels before further tuning. The learning curve is
+        still rising at 100 percent of the data, so extra labelled fraud would give more
+        than extra algorithmic effort.
+  \item Set the threshold from a real cost model, and revisit it as review capacity
+        changes. The framework in Section~\ref{sec:cost} needs only the true review cost
+        substituted in.
+  \item Report intervals, not single numbers. On a dataset with fewer than 500
+        positives, a bare PR-AUC figure looks more precise than it really is.
+\end{enumerate}

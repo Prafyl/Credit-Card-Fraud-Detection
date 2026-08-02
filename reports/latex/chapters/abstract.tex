@@ -1,0 +1,48 @@
+\setlength{\parskip}{1em}
+Credit card fraud detection is a problem of severe class imbalance. In the dataset used in
+this project, 473 of 283{,}726 transactions are fraudulent, a rate of 0.167 percent. Plain
+accuracy is therefore useless as a measure of quality: a model that labels every
+transaction as legitimate is right 99.83 percent of the time and catches no fraud at all.
+This project builds an end-to-end system that trains and compares eight classifier
+pipelines. Four algorithms (Logistic Regression, Random Forest, XGBoost, and LightGBM) are
+each trained under two strategies for handling imbalance (class weighting and SMOTE
+oversampling). Models are ranked by the area under the precision-recall curve (PR-AUC),
+which is the right metric to use when the positive class is rare. To prevent leakage,
+1{,}081 exact duplicate rows are removed before the data is split, and any resampling is
+applied strictly inside the training fold of each pipeline, so it never touches the
+validation or test data.
+
+The best model on a single split was LightGBM with class weighting. It reached a PR-AUC of
+0.828 on a held-out test set of 56{,}746 transactions, at a decision threshold of 0.636
+tuned on validation data. At that operating point it catches 70 of 95 frauds while raising
+only 2 false alarms.
+
+The main contribution of the project is what happens when that headline number is tested
+statistically. A 1{,}000-resample bootstrap places the champion's PR-AUC in a 95 percent
+interval of $[0.751, 0.899]$, which overlaps almost entirely with the intervals of the next
+four models. Pairwise McNemar tests find that none of the 28 model pairs differ
+significantly after Holm correction for multiple comparisons. Five-fold cross-validation
+gives fold-to-fold standard deviations between 0.018 and 0.032, which is four to six times
+the 0.005 gap separating the top four models, and under cross-validation XGBoost narrowly
+overtakes LightGBM. Our conclusion is that the leading models cannot be told apart on this
+dataset, and that choosing a champion from a single split is not a reliable procedure.
+
+A separate resampling study held the algorithm and its hyperparameters fixed and varied
+only the sampling step. Class weighting was best (0.828), followed by random oversampling
+(0.815), SMOTE (0.774), and random undersampling far behind (0.548). Undersampling
+collapses because of how it works: balancing the classes by discarding majority rows
+shrinks the training set from 170{,}235 rows to 568.
+
+Further analysis shows that the tree-based models are well calibrated (expected calibration
+error below 0.0025) while Logistic Regression is not (0.069), that the top decile of scored
+transactions contains 92.6 percent of all frauds, which is a lift of 9.3 over random
+review, and that under an amount-weighted cost model the tuned threshold is within 0.3
+percent of the cost-optimal operating point. The final model is served through a FastAPI
+backend and an interactive React web application with a 3D visualisation of the decision
+surface.
+
+\begin{keywords}
+Credit Card Fraud Detection, Class Imbalance, PR-AUC, LightGBM, SMOTE, Resampling
+Strategies, Bootstrap Confidence Intervals, McNemar's Test, Model Calibration,
+Cost-Sensitive Thresholding
+\end{keywords}

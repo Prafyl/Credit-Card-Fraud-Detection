@@ -1,0 +1,114 @@
+\chapter{Related Works}
+\label{ch:related}
+
+This chapter introduces the algorithms used, the reasoning behind the evaluation metric
+chosen, and the statistical procedures on which the comparison rests.
+
+\section{Classifiers for Tabular Fraud Detection}
+
+Early automated fraud detection relied on linear models and simple decision trees.
+\citet{dalpozzolo2015calibrating} studied credit card fraud detection in detail and showed
+that the way data is sampled and evaluated has a large effect on reported results, a
+finding this project also observes.
+
+Logistic Regression predicts fraud by fitting a straight decision boundary through
+the feature space. It is fast and easy to interpret, but it cannot represent interactions
+between features unless those interactions are built in by hand.
+
+Random Forest \citep{breiman2001random} averages many decision trees, each fitted
+to a bootstrap sample of the rows and a random subset of the features at each split. The
+averaging reduces variance, and the randomisation keeps the trees from all making the same
+mistakes.
+
+Gradient boosting fits trees one after another, with each new tree correcting the
+mistakes of the trees built so far. XGBoost \citep{chen2016xgboost} adds an explicit
+penalty on tree complexity to this process, which helps control overfitting.
+
+LightGBM \citep{ke2017lightgbm} is the model this project ultimately deploys. It
+differs from XGBoost in three ways that matter on a dataset of this size. It grows trees
+leaf-wise, meaning it always splits the leaf with the largest loss reduction rather than
+expanding every node at one depth, which reaches a lower loss for the same number of
+leaves. It uses \gls{goss}, keeping all the instances with large gradients while randomly
+subsampling the well-fitted ones, which suits imbalanced data. Finally, \gls{efb} merges
+mutually exclusive sparse features to reduce dimensionality, and histogram-based split
+finding makes training fast even on hundreds of thousands of rows.
+
+\section{Strategies for Class Imbalance}
+
+Four approaches are compared in this report.
+
+Class weighting leaves the data untouched and instead makes each fraud count for
+more when the model is trained. The weights come from the ``balanced'' heuristic of
+scikit-learn \citep{pedregosa2011scikit}, which sets each class weight inversely
+proportional to that class's frequency, so on this training set a fraud counts for roughly
+599 times as much as a legitimate transaction.
+
+Random undersampling discards majority-class rows until the classes are balanced.
+It is very simple, but on data this imbalanced it is destructive: balancing 284 frauds
+against 169{,}951 legitimate rows means throwing away 169{,}667 of them.
+
+Random oversampling duplicates minority rows instead. No information is discarded,
+but exact duplicates give the model the same evidence several times over, which can
+encourage it to overfit the particular frauds it has seen.
+
+SMOTE \citep{chawla2002smote} creates new synthetic minority examples by
+interpolating between existing fraud cases and their nearest fraud neighbours, rather than
+copying them outright.
+
+All three resampling methods share a serious pitfall. If they are applied to the whole
+dataset before splitting, synthetic or duplicated rows derived from test-set frauds leak
+into training, and the reported performance becomes fiction. For this reason every
+resampler in this project is a step inside the pipeline, so it is fitted only on the
+training fold.
+
+\section{Evaluation under Severe Imbalance}
+
+Let \gls{tp}, \gls{fp}, \gls{fn}, and \gls{tn} denote the four confusion-matrix counts. The
+two metrics used throughout this report are then
+\begin{equation}
+  \label{eq:precisionrecall}
+  \mathrm{Precision} = \frac{TP}{TP+FP}, \qquad
+  \mathrm{Recall} = \frac{TP}{TP+FN}.
+\end{equation}
+Equation~\ref{eq:precisionrecall} gives the standard definitions of precision and recall
+from the information retrieval literature, in the form used by
+\citet{davis2006relationship} in their analysis of ROC and precision-recall curves. Neither
+is original to this project.
+
+Precision is the share of flagged transactions that really are fraud, and recall is the
+share of real frauds that the model flags. The $F_1$ score reported in later tables is
+their harmonic mean, which is high only when both are high.
+
+Accuracy, $(TP+TN)/n$, is the standard textbook definition and is unusable here, because
+the trivial all-legitimate classifier
+scores 0.9983. \gls{rocauc} is also optimistic, because the enormous pool of true negatives
+barely moves it even when thousands of false alarms occur. The precision-recall curve is
+more honest about the errors that matter, because precision is sensitive to every false
+alarm \citep{davis2006relationship,saito2015precision}. This project therefore ranks models
+by PR-AUC, the area under this curve, computed as average precision, which is the
+recall-weighted mean of precision across every possible decision threshold. A random
+classifier scores the prevalence of the positive class, which here is 0.00167, rather than
+the 0.5 that ROC-AUC would give.
+
+Two further metrics are also used. The \gls{mcc} \citep{matthews1975comparison} summarises
+all four confusion-matrix cells into a single score that stays informative under imbalance.
+The Brier score \citep{brier1950verification} measures how well a predicted probability
+matches the true outcome, and pairs with the calibration analysis.
+
+\section{Statistical Comparison of Classifiers}
+\label{sec:statmethods}
+
+Comparing two classifiers on the same test set is a paired problem: the two models see
+identical transactions, so their errors are correlated and a plain unpaired test would be
+invalid \citep{dietterich1998approximate}. McNemar's test \citep{mcnemar1947note} is the
+appropriate paired test. It looks only at the cases where the two models disagree, and asks
+whether one model wins those disagreements more often than chance would allow. Because all
+28 model pairs are tested here, the resulting $p$-values are adjusted
+using the Holm step-down procedure \citep{holm1979simple}, which corrects for running many
+comparisons at once.
+
+For interval estimates around PR-AUC, a percentile bootstrap \citep{efron1987better} is
+used: the test set is resampled with replacement 1{,}000 times and the metric recomputed
+each time, giving a range of plausible values rather than a single number. For precision
+and recall, the Wilson score interval \citep{wilson1927probable} is used instead, since it
+stays within $[0,1]$ and remains accurate even for the small counts involved here.
