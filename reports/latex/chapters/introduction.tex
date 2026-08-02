@@ -1,0 +1,87 @@
+\chapter{Introduction}
+\label{ch:introduction}
+
+Card payments make up a large and growing share of everyday spending, and card fraud has
+grown with them. Banks and payment processors lose money to fraud every year, and
+cardholders lose time and trust when their cards are misused. To limit these losses,
+payment systems score transactions as they arrive and flag suspicious ones for review or
+blocking. Early systems used fixed rules written by analysts. Rules are easy to read but
+slow to keep up with new fraud patterns, so most modern systems now use \gls{ml} models
+that learn patterns directly from past transactions.
+
+\section{Background}
+
+A fraud detection model is only useful if it fits the shape of the problem, and this
+problem has three properties that make it hard.
+
+First, fraud is extremely rare. In the data used here, fraudulent transactions
+make up 0.167 percent of all records, or roughly one in every 600. A model trained without
+regard for this imbalance will lean toward calling everything legitimate, because that is
+correct 99.83 percent of the time. This also makes accuracy useless as a headline metric,
+and makes even the \gls{roc} curve optimistic, because the huge pool of correctly cleared
+transactions dominates the false alarm rate
+\citep{davis2006relationship,saito2015precision}.
+
+Second, the features are anonymised. To protect privacy, the public dataset
+releases most fields as \gls{pca} components rather than raw values, so feature engineering
+based on domain knowledge is not possible. We can see which components carry signal, but
+not what those components mean.
+
+Third, the cost of a mistake is asymmetric. Missing a fraud is usually worse than
+raising a false alarm, and the two errors are measured in different units. A missed fraud
+costs the transaction amount, while a false alarm costs an analyst's time. Where the model
+draws its decision line is therefore a business decision, not an implementation detail.
+
+\section{Motivation}
+
+Much published work on this dataset reports a single headline number from a single
+train/test split. That practice is fragile. With only 95 frauds in a 20 percent test set,
+a handful of transactions moving across the decision boundary can shift recall by several
+percentage points. A central motivation of this project is to check whether the differences
+between competing models survive basic statistical testing, using confidence intervals,
+paired significance tests, and cross-validation. On this dataset those differences turn out
+to be mostly noise, and reporting them as findings would be misleading.
+
+\section{Objectives}
+
+The primary objectives of this project are:
+
+\begin{enumerate}
+  \item To build a leakage-free pipeline and use it to train and compare eight model
+        pipelines, being four algorithms each trained with class weighting and with
+        \gls{smote}, ranked by \gls{prauc}, the metric suited to a rare positive class.
+  \item To measure the uncertainty in those results using bootstrap confidence intervals,
+        pairwise McNemar tests, and $k$-fold cross-validation, and to state plainly which
+        apparent differences are real.
+  \item To serve the trained models through a FastAPI backend and an interactive React web
+        application in which a reviewer can score transactions, switch models, and move the
+        decision threshold.
+\end{enumerate}
+
+\section{Scope and Significance}
+
+The project is built around a single public dataset and works offline: models are trained
+once and then served. It does not attempt streaming ingestion or online retraining. Within
+that scope the aim is to get the fundamentals right rather than to chase the highest
+possible score. The result is a working system that is clear about its limits. It reports
+how many frauds it still misses, explains why accuracy is not used, puts an uncertainty
+range around every headline figure, and exposes the decision threshold as a live control so
+a reviewer can see the trade-off rather than be told about it.
+
+\section{Contributions}
+
+\begin{itemize}
+  \item A leakage-free pipeline in which de-duplication happens before splitting and all
+        resampling happens inside the training fold.
+  \item A comparison of eight pipelines with the uncertainty measured: bootstrap intervals
+        on PR-AUC, Wilson intervals on precision and recall, and Holm-corrected McNemar
+        tests on every pair.
+  \item A controlled resampling study that separates the sampling step from the algorithm.
+  \item A calibration, cost, lift, and learning-curve analysis of the deployed model.
+  \item A served system with a model registry and an interactive web application, including
+        a 3D rendering of the full decision surface across all eight models and 201
+        thresholds.
+  \item A reproducible reporting chain: every table in this document is generated
+        automatically from the analysis outputs, so no number in the text can drift away
+        from the code that produced it.
+\end{itemize}

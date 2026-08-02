@@ -1,0 +1,449 @@
+\chapter{Methodology}
+\label{ch:methodology}
+
+This chapter describes the data, the exploratory analysis that shaped the design, the eight
+model pipelines, the protocol used to train and evaluate them, and the system that serves
+the result.
+
+\section{Dataset}
+\label{sec:dataset}
+
+The project uses the public \gls{ulb} credit card dataset, which contains transactions made
+by European cardholders over two days in September 2013. Each record has a \texttt{Time}
+value, an \texttt{Amount} value, twenty-eight anonymised PCA components \texttt{V1}--
+\texttt{V28}, and a binary \texttt{Class} label.
+
+Before anything else, 1{,}081 exact duplicate rows are removed, leaving 283{,}726
+transactions of which 473 are fraudulent. De-duplication is done before splitting on
+purpose, because identical rows landing in both the training and test sets would quietly
+inflate every reported score. Table~\ref{tab:profile} gives the full profile.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Dataset profile.}
+    \label{tab:profile}
+    \small
+    \input{tables/dataset_profile}
+\end{table}
+
+From the table we can see that only 473 of the 283{,}726 remaining transactions are
+fraudulent, that no values are missing anywhere in the data, and that 29 of the columns are
+used for modelling. All of these values are computed by
+\texttt{src/\allowbreak deep\_\allowbreak analysis.py} and written to
+\texttt{reports/\allowbreak dataset\_\allowbreak profile.csv}.
+
+The imbalance ratio of 598.8 legitimate transactions per fraud is the single most important
+property of this dataset, and it drives every design decision that follows.
+Figure~\ref{fig:balance} shows it on a logarithmic axis, because on a linear scale the
+fraud bar is not visible at all.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.62\textwidth]{01_class_balance.png}
+    \caption{Class balance.}
+    \label{fig:balance}
+\end{figure}
+
+From the figure above we can see how far apart the two bars are even after the axis has
+been compressed logarithmically. On a linear scale the fraud bar would be about one pixel
+high, and this gap is the core difficulty of the problem.
+
+\section{Exploratory Data Analysis}
+\label{sec:eda}
+
+\subsection{Transaction Amounts}
+
+A common intuition is that fraud chases large transactions. This dataset contradicts that.
+The median fraudulent transaction is EUR 9.82 against EUR 22.00 for legitimate ones, so
+fraud is typically smaller. The mean tells the opposite story (EUR 123.87 against EUR
+88.41), because a small number of large frauds pull the mean upward while most fraudulent
+activity sits at very low values. That is consistent with card testing, where an attacker
+checks a stolen card with a trivial purchase before attempting anything larger.
+
+Figure~\ref{fig:amount} shows this as a cumulative distribution, which compares the two
+groups more clearly than overlaid histograms would: the curve sitting higher and further
+left belongs to the smaller-valued group.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.78\textwidth]{02_amount_by_class.png}
+    \caption{Transaction amount by class.}
+    \label{fig:amount}
+\end{figure}
+
+From the figure above we can see that the fraud curve lies above and to the left of the
+legitimate curve across almost the whole range, which means fraudulent transactions are
+typically the smaller ones. This rules out any simple amount-threshold rule.
+
+\subsection{Temporal Pattern}
+
+Grouping by hour of day shows a strong pattern. Legitimate volume collapses overnight while
+fraudulent activity does not, so the fraud rate peaks at 1.451 percent around 02:00, about
+nine times the overall rate of 0.167 percent. Its lowest point is 0.048 percent during the
+busiest daytime hours, a spread of a factor of thirty. Figure~\ref{fig:hourly} plots both
+quantities against the hour of day.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{03_hourly_pattern.png}
+    \caption{Hourly transaction pattern.}
+    \label{fig:hourly}
+\end{figure}
+
+From the figure above we can see that the two panels move in opposite directions: the
+overnight hours where volume is lowest in the top panel are the same hours where the fraud
+rate peaks in the bottom panel. The panels are stacked rather than plotted on twin axes,
+which would imply a relationship the data does not establish.
+
+This is a real signal, and the model deliberately does not use it, for the reason given in
+Section~\ref{sec:features}: \texttt{Time} in this dataset cannot be mapped to a real clock
+for an unseen transaction. A production system with true timestamps should revisit this
+decision.
+
+\subsection{Feature Signal}
+
+Ranking each feature by the absolute Pearson correlation between its value and the label
+puts V17 (0.313), V14 (0.293), V12 (0.251), and V10 (0.207) well clear of the rest. Because
+the components are anonymised, this ranking is the only description available of which
+inputs matter. Figure~\ref{fig:signal} shows the full ranking.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.6\textwidth]{04_feature_signal.png}
+    \caption{Feature signal ranking.}
+    \label{fig:signal}
+\end{figure}
+
+From the figure above we can see that the signal is concentrated in a handful of
+components: the top four stand well clear, and the bars then decay quickly towards zero.
+Figure~\ref{fig:dists} looks at those four more closely.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.88\textwidth]{05_top_feature_distributions.png}
+    \caption{Top feature distributions.}
+    \label{fig:dists}
+\end{figure}
+
+From the figure above we can see that fraud sits in a visibly different region of each of
+the four distributions, and that separation is exactly what a classifier exploits.
+
+\subsection{Correlation Structure and Separability}
+
+Figure~\ref{fig:heatmap} shows how the features relate to one another.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.82\textwidth]{06_correlation_heatmap.png}
+    \caption{Feature correlation heatmap.}
+    \label{fig:heatmap}
+\end{figure}
+
+From the figure above we can see that the off-diagonal is almost uniformly blank, so
+V1--V28 are uncorrelated with each other, exactly as expected of PCA outputs. There is
+therefore no redundant pair to drop and no case for further dimensionality reduction,
+because the feature set is already orthogonal.
+
+Finally, Figure~\ref{fig:cluster} plots all fraud cases against a 15{,}000-row sample of
+legitimate ones on the two strongest features.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.68\textwidth]{07_fraud_cluster.png}
+    \caption{Fraud cluster.}
+    \label{fig:cluster}
+\end{figure}
+
+From the figure above we can see that fraud (red) forms a loose but distinct cluster rather
+than sitting inside the legitimate mass (blue). The two groups overlap, but they are
+clearly distinguishable, which is direct visual evidence that a non-linear classifier has
+real structure to learn here.
+
+\section{Feature Selection}
+\label{sec:features}
+
+The model uses twenty-nine input features: the twenty-eight PCA components and
+\texttt{Amount}. The \texttt{Time} field is left out on purpose. It is measured in seconds
+elapsed since the first transaction in this two-day sample, so it means nothing for a
+transaction observed later and cannot generalise. It is kept for exploratory analysis only,
+where it is converted to hour of day.
+
+No further feature engineering is applied. The PCA components are already decorrelated by
+construction and their original meaning is hidden, so there is no basis for either
+interaction terms or domain transformations.
+
+\section{Pipeline Design}
+
+Each of the eight models is a single pipeline built with scikit-learn
+\citep{pedregosa2011scikit} and imbalanced-learn \citep{lemaitre2017imbalanced}, so the
+saved winner is one self-contained object that the \gls{api} can call with a raw feature
+table. Every pipeline chains together three steps in a fixed order: a scaler that
+standardises the input features, an optional resampling step that corrects for class
+imbalance, and a classifier that produces the fraud probability.
+
+Packaging the three steps together is not just for tidiness. It is what guarantees that the
+scaler fitted at training time is the exact scaler applied at inference, and that the
+resampling step is never applied outside training.
+
+The four algorithms are Logistic Regression, Random Forest, XGBoost, and LightGBM. Each is
+trained twice, once with class weighting and once with SMOTE, giving eight pipelines. In
+the weighted variants the classifier receives \texttt{class\_\allowbreak weight="balanced"} (or
+\texttt{scale\_\allowbreak pos\_\allowbreak weight} for XGBoost) and no resampler is present. In the SMOTE variants
+the classifier is left unweighted, because resampling has already balanced the classes and
+applying both corrections would over-weight the minority class twice.
+
+\section{Data Splitting Protocol}
+\label{sec:splits}
+
+The data is split once by stratified sampling into three parts, in the proportions 60/20/20.
+Three splits are used rather than two because the default 0.5 probability cut-off is a poor
+operating point at 0.167 percent positives, and choosing a better one is itself a decision
+that can overfit. Table~\ref{tab:splits} states the sizes and the role of each partition.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Data splits.}
+    \label{tab:splits}
+    \small
+    \input{tables/splits}
+\end{table}
+
+From the table we can see that stratification keeps the fraud rate the same in all three
+partitions, and that the test set holds 95 of the 473 frauds. That set is used exactly
+once, to produce the final reported numbers.
+
+The protocol is therefore:
+\begin{enumerate}
+  \item Fit model parameters on the training set.
+  \item Choose the decision threshold on the validation set.
+  \item Report every final number on the test set, which took no part in either.
+\end{enumerate}
+
+\section{Threshold Selection}
+\label{sec:threshold}
+
+A classifier outputs a probability, and turning that into a decision requires a cut-off $t$.
+The threshold is chosen to minimise the total number of mistakes on validation data:
+\begin{equation}
+  \label{eq:threshold}
+  t^{\star} = \arg\min_{t} \Big( FN(t) + FP(t) \Big).
+\end{equation}
+
+Equation~\ref{eq:threshold} is written for this project rather than taken from a paper. It
+is the equal-cost special case of the general cost-sensitive decision rule of
+\citet{elkan2001foundations}, which selects the threshold minimising expected cost; setting
+the cost of a missed fraud equal to the cost of a false alarm reduces that rule to counting
+the two errors.
+
+This objective was chosen over maximising $F_1$ because it is easier to explain: it
+minimises the two counts a fraud team actually tracks, which are missed frauds and false
+alarms. It is computed efficiently by sorting the validation probabilities once and
+evaluating both counts through cumulative sums, giving $O(n \log n)$ overall.
+
+There are two caveats. First, this objective assumes that one missed fraud costs exactly as
+much as one false alarm, which is a modelling convenience rather than a business fact. A
+monetary cost model is applied later to the same predictions to check how much difference
+that assumption makes. Second, each model has a different probability distribution, so each
+gets its own threshold. The tuned values range from 0.355 to 0.99999, which means comparing
+raw probabilities across models is meaningless.
+
+\section{Leakage Control}
+\label{sec:leakage}
+
+Three specific measures prevent optimistic bias:
+
+\begin{enumerate}
+  \item De-duplication before splitting. The 1{,}081 exact duplicates are removed
+        first, so no row can appear in both training and test.
+  \item Resampling inside the pipeline. SMOTE and the random samplers are pipeline
+        steps, so \texttt{fit} applies them only to the training fold. Synthetic points
+        derived from test frauds can therefore never enter training. This is the classic
+        error that makes published results on this dataset impossible to reproduce.
+  \item Threshold tuned on validation, not test. The test set influences nothing
+        except the final report.
+\end{enumerate}
+
+As a safeguard, the training script reloads the saved winner from disk and re-scores the
+test set, asserting that the PR-AUC matches to within $10^{-9}$. It also warns if the
+PR-AUC exceeds 0.99, a value that on this dataset would indicate leakage rather than
+success. The statistical analysis script repeats this check independently.
+
+\section{Hyperparameter Search}
+
+LightGBM's settings were selected by a randomised search over 40 candidate configurations,
+scored by PR-AUC on the validation set. The pattern the search found was that many shallow
+trees generalise better here than fewer deep ones: the selected configuration uses 1{,}500
+estimators with only 15 leaves each. Table~\ref{tab:hyper} lists the final values.
+
+\begin{table}[htbp]
+    \centering
+    \caption{LightGBM hyperparameters.}
+    \label{tab:hyper}
+    \small
+    \input{tables/hyperparameters}
+\end{table}
+
+From the table we can see the shape of the selected model: 1{,}500 small trees of at most
+15 leaves each, a learning rate of 0.1 that keeps every individual tree's contribution
+modest, and a 70 percent feature subsample per tree to limit overfitting.
+
+The remaining algorithms use reasonable fixed settings rather than tuned ones (Random
+Forest 200 trees; XGBoost 300 rounds at depth 5). This is a deliberate asymmetry and a
+limitation: the comparison is between a tuned LightGBM and untuned competitors, which
+biases it in LightGBM's favour.
+
+\section{System Implementation}
+\label{sec:system}
+
+\subsection{Architecture}
+
+The system splits into a modelling side written in Python and a serving side made up of an
+HTTP API and a browser application.
+
+% tabularx and its Y column come from projectreport.cls, so the description column wraps
+% inside the text block instead of running off the right margin.
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\hline
+\textbf{Stage} & \textbf{Responsibility} \\
+\hline
+\texttt{src/data.py}    & Load the CSV, de-duplicate, produce the stratified splits \\
+\texttt{src/eda.py}     & Exploratory figures 1--7 \\
+\texttt{src/models.py}  & Construct the eight pipelines \\
+\texttt{src/train.py}   & Fit, tune thresholds, evaluate, persist the registry \\
+\texttt{src/tune.py}    & Randomised hyperparameter search for LightGBM \\
+\texttt{src/resampling\_experiment.py} & The controlled resampling study \\
+\texttt{src/deep\_analysis.py} & The statistical analysis and its figures \\
+\texttt{src/make\_tables.py} & Emit every LaTeX table in this report from the CSVs \\
+\hline
+\texttt{api/main.py}    & Load the registry once, serve scoring endpoints \\
+\texttt{web/}           & React application \\
+\hline
+\end{tabularx}
+\end{center}
+
+The two sides communicate only through saved files, namely
+\texttt{models/\allowbreak registry/\allowbreak *.joblib} and \texttt{models/\allowbreak metadata.json}. Models can therefore be
+retrained without touching the application, and the application can be developed without
+retraining models.
+
+\subsection{Serving API}
+
+The backend is a FastAPI service that loads all eight pipelines at startup. Every scoring
+endpoint accepts an optional model name and threshold, so the caller chooses which trained
+model scores the request and at what cut-off.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\hline
+\textbf{Endpoint} & \textbf{Purpose} \\
+\hline
+\texttt{GET /models}          & List all models with their test metrics \\
+\texttt{GET /model-info}      & One model's features, threshold, metrics, and sweep \\
+\texttt{GET /samples}         & Real held-out transactions for the interface to score \\
+\texttt{POST /predict}        & Score a single transaction \\
+\texttt{POST /predict/batch}  & Score an array of transactions \\
+\texttt{POST /predict/csv}    & Score an uploaded file \\
+\hline
+\end{tabularx}
+\end{center}
+
+Rather than storing derived rates, \texttt{/model-info} returns each model's threshold sweep
+as 201 raw confusion-count records of the form $\{t, TP, FP, FN, TN\}$ at
+$t = 0.000, 0.005, \dots, 1.000$. Any metric, whether precision, recall, $F_1$, \gls{tpr} or
+\gls{fpr}, is then derived in the browser without re-scoring anything. This keeps the API
+small while giving the interface everything it needs.
+
+\subsection{Web Application}
+
+The frontend is a React application built with Vite and TypeScript. It has a landing page
+and four working screens: score one transaction, score a batch, upload and score a
+\gls{csv} file, and a dashboard.
+
+A control bar applies to every screen, letting the user select any of the eight trained
+models and set the decision threshold. Selecting a model resets the threshold to that
+model's own tuned value, because Section~\ref{sec:threshold} established that thresholds
+are not comparable across models. Since \texttt{V1}--\texttt{V28} are anonymised and cannot
+be typed in by hand, the interface loads real held-out transactions for the user to score.
+Figure~\ref{fig:detector} shows the single-transaction screen before anything is scored.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.92\textwidth]{detector_page.png}
+    \caption{Transaction scoring screen.}
+    \label{fig:detector}
+\end{figure}
+
+From the figure above we can see the two controls that the report argues matter most. The
+model selector names the pipeline in use together with its PR-AUC, and the threshold slider
+sits at the tuned default of 0.636, labelled at each end with the trade-off it governs. The
+four tabs across the top are the four screens, and the buttons above the feature form load a
+real held-out fraud or legitimate transaction rather than asking the user to invent
+anonymised values.
+
+Scoring a transaction fills the empty panel on the right with a verdict.
+Figure~\ref{fig:flagged} shows the result after a known fraud has been loaded and scored.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.92\textwidth]{fraud_flagged.png}
+    \caption{A flagged transaction.}
+    \label{fig:flagged}
+\end{figure}
+
+From the figure above we can see that the model returns a fraud probability of 100.00
+percent for this transaction and flags it, and that the badge confirms the verdict matches
+the true label. The bar below the verdict places that probability on the 0 to 1 range with a
+marker at the active threshold, so the user can see how far past the cut-off the score fell
+rather than being given a bare yes or no.
+
+\subsection{Three-Dimensional Visualisation}
+
+Parts of this report describe objects that are naturally three-dimensional, and the
+application renders them with WebGL using React Three Fiber.
+
+The landing page is a single scroll-driven sequence in four stages, which walks a visitor
+through the same path this report takes. It opens on a 3D credit card, then moves inside it
+to a network of 31 nodes, one for each column of the dataset, where a node's distance from
+the camera path is its permutation importance, so V14 and V4 pass closest. It then passes through a set of boosted decision trees, where each leaf
+contributes a signed weight to a running total, and ends at a threshold gate that routes
+scored transactions into an approved path and a flagged path. The transactions used in that
+final stage are real held-out cases fetched from \texttt{GET /samples}, and a slider sets
+the cut-off they are compared against, so moving it re-routes the stream on screen.
+Figure~\ref{fig:landing} shows the opening stage of that sequence.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.72\textwidth]{landing_page.png}
+    \caption{Landing page.}
+    \label{fig:landing}
+\end{figure}
+
+From the figure above we can see the first of the four stages, a 3D credit card rendered in
+the browser with the prompt to scroll into its chip. The two buttons let a visitor either
+begin the guided sequence or skip straight to the scoring screens, so the visualisation
+never stands between a reviewer and the numbers.
+
+The dashboard renders the decision surface, which plots the $8 \times 201$ grid of
+threshold sweeps as a continuous landscape: threshold on one axis, model on the second,
+$F_1$ as height, and precision as colour. The ridge running along the surface is each
+model's usable operating band, and the cliff at low thresholds is where precision
+collapses. A translucent plane tracks the threshold slider, so
+moving the familiar 2D control walks a marker across the 3D surface. Beside it, the model
+field renders the eight pipelines on their natural $4 \times 2$ grid of four algorithms by
+two imbalance strategies, with bar height proportional to PR-AUC.
+
+All of these views degrade gracefully. If WebGL is unavailable, or if the operating system
+reports a preference for reduced motion, the application falls back to the two-dimensional
+charts and tables, which remain the authoritative presentation of the numbers.
+
+\section{Reproducibility}
+
+Every random component is seeded with \texttt{random\_\allowbreak state = 42}, including the splitter,
+the samplers, the bootstrap, the cross-validation folds, and each classifier. Package
+versions are pinned in \texttt{requirements.txt} and listed in Appendix~\ref{app:repro}.
+Re-running \texttt{src/train.py} followed by \texttt{src/\allowbreak deep\_\allowbreak analysis.py} and
+\texttt{src/\allowbreak make\_\allowbreak tables.py} regenerates every number and figure in this report from the
+raw CSV.
