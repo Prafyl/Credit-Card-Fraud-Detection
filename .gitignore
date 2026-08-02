@@ -1,0 +1,24 @@
+# Data — 144 MB, over GitHub's file size limit. Download from Kaggle:
+# https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
+creditcard.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node / frontend
+web/node_modules/
+web/dist/
+
+# Editors and tooling
+.claude/
+.vscode/
+.idea/
+
+# Office lock files
+~$*
+
+# OS
+.DS_Store
+Thumbs.db
